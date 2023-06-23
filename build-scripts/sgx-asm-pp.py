@@ -34,7 +34,7 @@
 __version__ = '1.0.1'
 import sys
 import os
-import re 
+import re
 import shutil
 import argparse
 
@@ -42,7 +42,7 @@ LOCK = 'lock'
 REP = 'rep[a-z]*'
 REX = 'rex(?:\.[a-zA-Z]+)?'
 SCALAR = '(?:(?:[+-]\s*)?(?:[0-9][0-9a-fA-F]*|0x[0-9a-fA-F]+))'
-IMMEDIATE = '(?:%s[hb]?)' %(SCALAR)
+IMMEDIATE = f'(?:{SCALAR}[hb]?)'
 REG = '(?:[a-zA-Z][a-zA-Z0-9]*)'
 SYM = '(?:[_a-zA-Z][_a-zA-Z0-9]*(?:@[0-9a-zA-Z]+)?)'
 LABEL = '(?:[._a-zA-Z0-9]+)'
@@ -51,7 +51,7 @@ PFX = '(?:%s\s+)?' %(REX)
 CONST = '(?:(?:%s|%s|%s)(?:\s*[/*+-]\s*(?:%s|%s|%s))*)' %(SYM, SCALAR, LABEL, SYM, SCALAR, LABEL)
 OFFSET = '(?:%s|%s|%s\s*:\s*(?:%s|%s|))' %(CONST, SYM, REG, CONST, SYM)
 MEMORYOP = '(?:\[*(?:[a-zA-Z]+\s+)*(?:%s\s*:\s*%s?|(?:%s\s*)?\[[^]]+\]\]*))' %(REG, CONST, OFFSET)
-ANYOP = '(?:%s|%s|%s|%s|%s)' %(MEMORYOP, IMMEDIATE, REG, SYM, LABEL)
+ANYOP = f'(?:{MEMORYOP}|{IMMEDIATE}|{REG}|{SYM}|{LABEL})'
 MEMORYOP = '(?:%s|(?:[a-zA-Z]+\s+(?:ptr|PTR)\s+%s))' %(MEMORYOP, ANYOP)
 MEMORYSRC = '(?:%s\s*,\s*)+%s(?:\s*,\s*%s)*' %(ANYOP, MEMORYOP, ANYOP)
 MEMORYANY = '(?:%s\s*,\s*)*%s(?:\s*,\s*%s)*' %(ANYOP, MEMORYOP, ANYOP)
@@ -59,106 +59,116 @@ ATTSTAR = ''
 GPR = '(?:rax|rcx|rdx|rbx|rdi|rsi|rbp|rsp|r8|r9|r10|r11|r12|r13|r14|r15|RAX|RCX|RDX|RBX|RDI|RSI|RBP|RSP|R8|R9|R10|R11|R12|R13|R14|R15)'
 
 LFENCE = [
-    '(?:%s%smov(?:[a-rt-z][a-z0-9]*)?\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%s(?:vpmask|vmask|mask|c|v|p|vp)mov[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%spop[bswlqt]?\s+(?:%s|%s))' %(SEP, PFX, MEMORYOP, REG),
-    '(?:%s%spopad?\s+%s\s*)' %(SEP, PFX, REG),
-    '(?:%s%s(?:%s\s+)?xchg[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?(?:x|p|vp|ph|h|pm|vpm|)add[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?(?:p|vp|ph|h|)sub[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?ad[co]x?[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?sbb[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?v?p?cmp(?:[a-rt-z][a-z0-9]*)?\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?inc[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?dec[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?not[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?neg[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:i|v|p|vp|)mul[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%s(?:i|v|p|vp|)div[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%spopcnt[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%scrc32[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?v?p?and[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?v?p?or[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?v?p?xor[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%sv?p?test[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%ss[ah][lr][a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%ssar[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%s(?:vp|)ro(?:r|l)[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%src(?:r|l)[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%s(?:%s\s+)?bt[a-z]*\s+%s)' %(SEP, PFX, LOCK, MEMORYANY),
-    '(?:%s%sbs[fr][a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%s(?:vp|)[lt]zcnt[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sblsi[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sblsmsk[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sblsr[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sbextr[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sbzhi[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%spdep[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%spext[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%s(?:%s\s+)?lods[a-z]*(?:\s+%s|\s*(?:#|$)))' %(SEP, PFX, REP, MEMORYSRC),
-    '(?:%s%s(?:%s\s+)?scas[a-z]*(?:\s+%s|\s*(?:#|$)))' %(SEP, PFX, REP, MEMORYSRC),
-    '(?:%s%s(?:%s\s+)?outs[a-z]*(?:\s+%s|\s*(?:#|$)))' %(SEP, PFX, REP, MEMORYSRC),
-    '(?:%s%s(?:%s\s+)?cmps[a-z]*(?:\s+%s|\s*(?:#|$)))' %(SEP, PFX, REP, MEMORYSRC),
-    '(?:%s%s(?:%s\s+)?movs[a-z]*(?:\s+%s|\s*(?:#|$)))' %(SEP, PFX, REP, MEMORYSRC),
-    '(?:%s%slddqu\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?pack[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?p?unpck[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?p?shuf[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?p?align[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?pblend[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%svperm[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?p?insr[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?insert[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?p?expand[a-z]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%svp?broadcast[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svp?gather[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?pavg[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?p?min[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?p?max[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?phminpos[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?pabs[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?psign[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?(?:m|db|)psad[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?psll[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?psrl[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?psra[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?pclmulqdq\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?aesdec(?:last)?\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?aesenc(?:last)?\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?aesimc\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?aeskeygenassist\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?sha(?:1|256)(?:nexte|rnds4|msg1|msg2)\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?cvt[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?rcp(?:ss|ps)\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?u?comis[sd]\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?round[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?dpp[sd]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sv?r?sqrt[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYSRC),
-    '(?:%s%sv?ldmxcsr\s+%s)' %(SEP, PFX, MEMORYOP),
-    '(?:%s%sf?x?rstors?\s+%s)' %(SEP, PFX, MEMORYOP),
-    '(?:%s%sl[gi]dt\s+%s)' %(SEP, PFX, MEMORYOP),
-    '(?:%s%slmsw\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svmptrld\s+%s)' %(SEP, PFX, MEMORYOP),
-    '(?:%s%sf(?:b|i|)ld[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sfi?add[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sfi?sub[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sfi?mul[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sfi?div[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sf(?:i|u|)com[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sleave[bswlqt]?)' %(SEP, PFX),
-    '(?:%s%spopf[bswlqt]?)' %(SEP, PFX),
-    '(?:%s%svfixupimm[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svf[m|n]add[a-z0-9]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svfpclass[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svget[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svpconflict[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svpternlog[d|q]\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svrange[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svreduce[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svrndscale[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%svscalef[a-z]*\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sxlat\s+%s)' %(SEP, PFX, MEMORYANY),
-    '(?:%s%sxlatb?)' %(SEP, PFX),
+    '(?:%s%smov(?:[a-rt-z][a-z0-9]*)?\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%s(?:vpmask|vmask|mask|c|v|p|vp)mov[a-z0-9]*\s+%s)'
+    % (SEP, PFX, MEMORYSRC),
+    '(?:%s%spop[bswlqt]?\s+(?:%s|%s))' % (SEP, PFX, MEMORYOP, REG),
+    '(?:%s%spopad?\s+%s\s*)' % (SEP, PFX, REG),
+    '(?:%s%s(?:%s\s+)?xchg[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?(?:x|p|vp|ph|h|pm|vpm|)add[a-z]*\s+%s)'
+    % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?(?:p|vp|ph|h|)sub[a-z]*\s+%s)'
+    % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?ad[co]x?[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?sbb[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?v?p?cmp(?:[a-rt-z][a-z0-9]*)?\s+%s)'
+    % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?inc[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?dec[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?not[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?neg[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:i|v|p|vp|)mul[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%s(?:i|v|p|vp|)div[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%spopcnt[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%scrc32[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?v?p?and[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?v?p?or[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?v?p?xor[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%sv?p?test[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%ss[ah][lr][a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%ssar[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%s(?:vp|)ro(?:r|l)[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%src(?:r|l)[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%s(?:%s\s+)?bt[a-z]*\s+%s)' % (SEP, PFX, LOCK, MEMORYANY),
+    '(?:%s%sbs[fr][a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%s(?:vp|)[lt]zcnt[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sblsi[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sblsmsk[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sblsr[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sbextr[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sbzhi[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%spdep[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%spext[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%s(?:%s\s+)?lods[a-z]*(?:\s+%s|\s*(?:#|$)))'
+    % (SEP, PFX, REP, MEMORYSRC),
+    '(?:%s%s(?:%s\s+)?scas[a-z]*(?:\s+%s|\s*(?:#|$)))'
+    % (SEP, PFX, REP, MEMORYSRC),
+    '(?:%s%s(?:%s\s+)?outs[a-z]*(?:\s+%s|\s*(?:#|$)))'
+    % (SEP, PFX, REP, MEMORYSRC),
+    '(?:%s%s(?:%s\s+)?cmps[a-z]*(?:\s+%s|\s*(?:#|$)))'
+    % (SEP, PFX, REP, MEMORYSRC),
+    '(?:%s%s(?:%s\s+)?movs[a-z]*(?:\s+%s|\s*(?:#|$)))'
+    % (SEP, PFX, REP, MEMORYSRC),
+    '(?:%s%slddqu\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?pack[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?p?unpck[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?p?shuf[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?p?align[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?pblend[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%svperm[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?p?insr[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?insert[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?p?expand[a-z]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%svp?broadcast[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svp?gather[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?pavg[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?p?min[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?p?max[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?phminpos[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?pabs[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?psign[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?(?:m|db|)psad[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?psll[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?psrl[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?psra[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?pclmulqdq\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?aesdec(?:last)?\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?aesenc(?:last)?\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?aesimc\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?aeskeygenassist\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?sha(?:1|256)(?:nexte|rnds4|msg1|msg2)\s+%s)'
+    % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?cvt[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?rcp(?:ss|ps)\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?u?comis[sd]\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?round[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?dpp[sd]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sv?r?sqrt[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYSRC),
+    '(?:%s%sv?ldmxcsr\s+%s)' % (SEP, PFX, MEMORYOP),
+    '(?:%s%sf?x?rstors?\s+%s)' % (SEP, PFX, MEMORYOP),
+    '(?:%s%sl[gi]dt\s+%s)' % (SEP, PFX, MEMORYOP),
+    '(?:%s%slmsw\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svmptrld\s+%s)' % (SEP, PFX, MEMORYOP),
+    '(?:%s%sf(?:b|i|)ld[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sfi?add[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sfi?sub[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sfi?mul[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sfi?div[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sf(?:i|u|)com[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    f'(?:{SEP}{PFX}leave[bswlqt]?)',
+    f'(?:{SEP}{PFX}popf[bswlqt]?)',
+    '(?:%s%svfixupimm[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svf[m|n]add[a-z0-9]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svfpclass[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svget[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svpconflict[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svpternlog[d|q]\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svrange[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svreduce[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svrndscale[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%svscalef[a-z]*\s+%s)' % (SEP, PFX, MEMORYANY),
+    '(?:%s%sxlat\s+%s)' % (SEP, PFX, MEMORYANY),
+    f'(?:{SEP}{PFX}xlatb?)',
 ]
 
 RET = '(?:%s%sret[a-z]*(?:\s+%s)?(?:#|$))' %(SEP, PFX, IMMEDIATE)
@@ -169,43 +179,37 @@ REG_INDBR = '(?:%s%s(?:call|jmp)[a-z]*\s+%s)' %(SEP, PFX, GPR)
 # File Operations - read/write
 #
 def read_file(sfile):
-    f = open(sfile, 'r')
-    lines = f.readlines()
-    f.close()
+    with open(sfile, 'r') as f:
+        lines = f.readlines()
     return lines
 
 def write_file(tfile, lines):
-    f = open(tfile, 'w')
-    for line in lines:
-        f.write(line)
-    f.close()
+    with open(tfile, 'w') as f:
+        for line in lines:
+            f.write(line)
     return
 
 def check_code_line(line):
     line = line.strip()
-    if line.startswith(';') or line.startswith('%') or line.startswith('['):
-        return False
-    
-    return True
+    return (
+        not line.startswith(';')
+        and not line.startswith('%')
+        and not line.startswith('[')
+    )
 
 ASSEMBLERS = ['ml64', 'ml', 'nasm']
 MITIGATIONS = ['NONE', 'CF', 'LOAD']
 
 def insert_lfence(compiler, mitigation_level, infile, outfile):
-    if compiler.startswith('ml'):
-        PTR_KEYWORD = 'PTR'
-    else: # compiler == 'nasm.exe'
-        PTR_KEYWORD = ''
-
-    pattern = '|'.join('(?:%s)' % l for l in LFENCE)
+    PTR_KEYWORD = 'PTR' if compiler.startswith('ml') else ''
+    pattern = '|'.join(f'(?:{l})' for l in LFENCE)
     lines = read_file(infile)
     outputs = lines
     for i in range(0, len(lines)):
         if lines[i].strip().startswith(';') or lines[i].strip().startswith('%') or lines[i].strip().startswith('['):
             continue
         if mitigation_level == 'LOAD':
-            m = re.search(pattern, lines[i])
-            if m:
+            if m := re.search(pattern, lines[i]):
                 j = i
                 while j > 0:
                     j = j + 1
@@ -215,8 +219,7 @@ def insert_lfence(compiler, mitigation_level, infile, outfile):
                     load_mitigation = '    lfence\n'
                     outputs[i] = outputs[i] + load_mitigation
         if mitigation_level == 'CF':
-            m = re.search(REG_INDBR, lines[i])
-            if m:
+            if m := re.search(REG_INDBR, lines[i]):
                 j = i
                 while j > 0:
                     j = j - 1
@@ -225,12 +228,10 @@ def insert_lfence(compiler, mitigation_level, infile, outfile):
                 if not outputs[j].split('\n')[-2].strip().startswith('lfence'):
                     outputs[i] = '    lfence\n' + outputs[i]
         if mitigation_level != 'NONE':
-            m = re.search(RET, lines[i])
-            if m:
+            if m := re.search(RET, lines[i]):
                 ret_mitigation = '    shl QWORD %s [rsp], 0\n    lfence\n' %(PTR_KEYWORD)
                 outputs[i] = ret_mitigation + outputs[i]
-            m = re.search(MEM_INDBR, lines[i])
-            if m:
+            if m := re.search(MEM_INDBR, lines[i]):
                 print ('Warning: indirect branch with memory operand, line %d' %(i))
 
     write_file(outfile, outputs)
@@ -247,13 +248,13 @@ def parse_options():
     if opts.assembler is None:
         print ('Error: assembler is not set')
         sys.exit(1)
-    if not opts.assembler.lower() in ASSEMBLERS:
-        print ('Error: assembler %s is not recogonized' %(opts.assembler))
+    if opts.assembler.lower() not in ASSEMBLERS:
+        print(f'Error: assembler {opts.assembler} is not recogonized')
         sys.exit(1)
     compiler = opts.assembler# + '.exe'
     # mitigation level
-    if not opts.mitigation.upper() in MITIGATIONS:
-        print ('Error: MITIGATION-CVE-2020-0551 %s is not recogonized' %(opts.mitigation))
+    if opts.mitigation.upper() not in MITIGATIONS:
+        print(f'Error: MITIGATION-CVE-2020-0551 {opts.mitigation} is not recogonized')
         sys.exit(1)
     # process the arguments, add space and quote if needed
     for arg in args:
@@ -267,9 +268,9 @@ def parse_options():
 
 
 def get_mitigated_file(src):
-    return src + '.mitigated'
+    return f'{src}.mitigated'
 def get_preprocess_file(src):
-    return src + '.preprocess'
+    return f'{src}.preprocess'
 
 def get_src_index(options):
     src_index = -1
@@ -300,13 +301,13 @@ def get_dst_index(options):
 def get_preprocess_cmd(compiler, options, src_index):
     pre_file = get_preprocess_file(src_file)
     if compiler.startswith('ml'):
-        pre_cmd = compiler + ' /EP ' + ' '.join(options) + ' > ' + pre_file
+        pre_cmd = f'{compiler} /EP ' + ' '.join(options) + ' > ' + pre_file
     else: # compiler == 'nasm.exe'
         ops = options
         dst_index = get_dst_index(options)
         tmp_file = ops[dst_index]
         ops[dst_index] = get_preprocess_file(src_file)
-        pre_cmd = compiler + ' -E ' + ' '.join(ops)
+        pre_cmd = f'{compiler} -E ' + ' '.join(ops)
         ops[dst_index] = tmp_file
     return pre_cmd
 
@@ -322,16 +323,18 @@ if __name__ == '__main__':
         pre_cmd = get_preprocess_cmd(compiler, options, src_index)
         errno = os.system(pre_cmd)
         if errno != 0:
-            print ('preprocess the assembly failed, see %s for the preprocess output' %(get_preprocess_file(src_file)))
+            print(
+                f'preprocess the assembly failed, see {get_preprocess_file(src_file)} for the preprocess output'
+            )
             sys.exit(errno)
         # insert lfence
         insert_lfence(compiler, mitigation, get_preprocess_file(src_file), get_mitigated_file(src_file))
         # compile use the mitigated file
         ops[src_index] = get_mitigated_file(src_file)
- 
-    as_cmd = compiler + ' ' + ' '.join(ops)
+
+    as_cmd = f'{compiler} ' + ' '.join(ops)
     errno = os.system(as_cmd)
     if errno != 0:
-        print ('compile failed, file %s' %(get_mitigated_file(src_file)))
+        print(f'compile failed, file {get_mitigated_file(src_file)}')
         sys.exit(errno)
     sys.exit(0)

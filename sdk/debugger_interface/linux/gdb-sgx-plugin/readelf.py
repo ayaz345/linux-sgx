@@ -35,7 +35,7 @@ def ReadElf(EnclaveFile):
     readelf_cmd = 'readelf'
 
     if prefix.strip() != 'None':
-        readelf_cmd = prefix.strip() + 'readelf'
+        readelf_cmd = f'{prefix.strip()}readelf'
     try:
         text = subprocess.check_output([readelf_cmd,
                                         '-W',

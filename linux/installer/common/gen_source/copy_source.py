@@ -51,11 +51,19 @@ def copy_files():
 		for line in f:
 			if line == "\n":
 				continue
-			src = line.split('\t')[0].replace("\\", "/").replace("<deliverydir>/", src_path + "/")
-			dst = line.split('\t')[1].replace("\\", "/").replace("<installdir>/", dst_path + "/")
+			src = (
+				line.split('\t')[0]
+				.replace("\\", "/")
+				.replace("<deliverydir>/", f"{src_path}/")
+			)
+			dst = (
+				line.split('\t')[1]
+				.replace("\\", "/")
+				.replace("<installdir>/", f"{dst_path}/")
+			)
 
-			if os.path.realpath(dst).startswith(os.path.realpath(src) + "/") == True:
-				print("Error: destination {} is a sub-directory of source {}!".format(dst, src)) 
+			if os.path.realpath(dst).startswith(f"{os.path.realpath(src)}/") == True:
+				print(f"Error: destination {dst} is a sub-directory of source {src}!")
 				exit(1)
 
 			if os.path.exists(src) == True:
@@ -66,7 +74,7 @@ def copy_files():
 				else:
 					copy_directory(src, dst)
 			else:
-				print("Error: src directory/file {} does not exist!".format(src))
+				print(f"Error: src directory/file {src} does not exist!")
 				exit(1)
 	return
 
@@ -88,13 +96,13 @@ def parse_args():
 	args = parser.parse_args()
 
 	if os.path.isfile(os.path.abspath(args.bom_file.name)) == False:
-		parser.error("Invalid argument for option '--bom-file %s'." %(args.bom_file.name))
+		parser.error(f"Invalid argument for option '--bom-file {args.bom_file.name}'.")
 		exit(1)
 	if os.path.isdir(os.path.abspath(args.src_path)) == False:
-		parser.error("Invalid argument for option '--src-path %s'." %(args.src_path))
+		parser.error(f"Invalid argument for option '--src-path {args.src_path}'.")
 		exit(1)
 	if os.path.exists(args.dst_path) == True and os.path.isdir(os.path.abspath(args.dst_path)) == False:
-		parser.error("Invalid argument for option '--dst-path %s'." %(args.dst_path))
+		parser.error(f"Invalid argument for option '--dst-path {args.dst_path}'.")
 		exit(1)
 
 	bom_file = args.bom_file.name

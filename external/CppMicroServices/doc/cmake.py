@@ -59,71 +59,66 @@ class CMakeModule(Directive):
         Directive.__init__(self, *args, **keys)
 
     def run(self):
-        settings = self.state.document.settings
-        if not settings.file_insertion_enabled:
-            raise self.warning('"%s" directive disabled.' % self.name)
+      settings = self.state.document.settings
+      if not settings.file_insertion_enabled:
+        raise self.warning(f'"{self.name}" directive disabled.')
 
-        env = self.state.document.settings.env
-        rel_path, path = env.relfn2path(self.arguments[0])
-        path = os.path.normpath(path)
-        encoding = self.options.get('encoding', settings.input_encoding)
-        e_handler = settings.input_encoding_error_handler
-        try:
-            settings.record_dependencies.add(path)
-            f = io.FileInput(source_path=path, encoding=encoding,
-                             error_handler=e_handler)
-        except UnicodeEncodeError as error:
-            raise self.severe('Problems with "%s" directive path:\n'
-                              'Cannot encode input file path "%s" '
-                              '(wrong locale?).' %
-                              (self.name, SafeString(path)))
-        except IOError as error:
-            raise self.severe('Problems with "%s" directive path:\n%s.' %
-                      (self.name, ErrorString(error)))
-        raw_lines = f.read().splitlines()
-        f.close()
-        rst = None
-        lines = []
-        for line in raw_lines:
-            if rst is not None and rst != '#':
-                # Bracket mode: check for end bracket
-                pos = line.find(rst)
-                if pos >= 0:
-                    if line[0] == '#':
-                        line = ''
-                    else:
-                        line = line[0:pos]
-                    rst = None
-            else:
-                # Line mode: check for .rst start (bracket or line)
-                m = self.re_start.match(line)
-                if m:
-                    rst = ']%s]' % m.group('eq')
-                    line = ''
-                elif line == '#.rst:':
-                    rst = '#'
-                    line = ''
-                elif rst == '#':
-                    if line == '#' or line[:2] == '# ':
-                        line = line[2:]
-                    else:
-                        rst = None
-                        line = ''
-                elif rst is None:
-                    line = ''
-            lines.append(line)
+      env = self.state.document.settings.env
+      rel_path, path = env.relfn2path(self.arguments[0])
+      path = os.path.normpath(path)
+      encoding = self.options.get('encoding', settings.input_encoding)
+      e_handler = settings.input_encoding_error_handler
+      try:
+          settings.record_dependencies.add(path)
+          f = io.FileInput(source_path=path, encoding=encoding,
+                           error_handler=e_handler)
+      except UnicodeEncodeError as error:
+          raise self.severe('Problems with "%s" directive path:\n'
+                            'Cannot encode input file path "%s" '
+                            '(wrong locale?).' %
+                            (self.name, SafeString(path)))
+      except IOError as error:
+          raise self.severe('Problems with "%s" directive path:\n%s.' %
+                    (self.name, ErrorString(error)))
+      raw_lines = f.read().splitlines()
+      f.close()
+      rst = None
+      lines = []
+      for line in raw_lines:
         if rst is not None and rst != '#':
-            raise self.warning('"%s" found unclosed bracket "#[%s[.rst:" in %s' %
-                               (self.name, rst[1:-1], path))
-        self.state_machine.insert_input(lines, path)
-        return []
+          # Bracket mode: check for end bracket
+          pos = line.find(rst)
+          if pos >= 0:
+            line = '' if line[0] == '#' else line[:pos]
+            rst = None
+        elif m := self.re_start.match(line):
+          rst = f"]{m.group('eq')}]"
+          line = ''
+        elif line == '#.rst:':
+            rst = '#'
+            line = ''
+        elif rst == '#':
+            if line == '#' or line[:2] == '# ':
+                line = line[2:]
+            else:
+                rst = None
+                line = ''
+        else:
+          line = ''
+        lines.append(line)
+      if rst is not None and rst != '#':
+        raise self.warning(
+            f'"{self.name}" found unclosed bracket "#[{rst[1:-1]}[.rst:" in {path}'
+        )
+      self.state_machine.insert_input(lines, path)
+      return []
 
 class _cmake_index_entry:
     def __init__(self, desc):
         self.desc = desc
 
     def __call__(self, title, targetid, main = 'main'):
-        return ('pair', u'%s ; %s' % (self.desc, title), targetid, main, None)
+      return 'pair', f'{self.desc} ; {title}', targetid, main, None
 
 _cmake_index_objs = {
     'command':    _cmake_index_entry('command'),
@@ -142,12 +137,13 @@ _cmake_index_objs = {
     }
 
 def _cmake_object_inventory(env, document, line, objtype, targetid):
-    inv = env.domaindata['cmake']['objects']
-    if targetid in inv:
-        document.reporter.warning(
-            'CMake object "%s" also described in "%s".' %
-            (targetid, env.doc2path(inv[targetid][0])), line=line)
-    inv[targetid] = (env.docname, objtype)
+  inv = env.domaindata['cmake']['objects']
+  if targetid in inv:
+    document.reporter.warning(
+        f'CMake object "{targetid}" also described in "{env.doc2path(inv[targetid][0])}".',
+        line=line,
+    )
+  inv[targetid] = (env.docname, objtype)
 
 class CMakeTransform(Transform):
 
@@ -160,50 +156,49 @@ class CMakeTransform(Transform):
         self.titles = {}
 
     def parse_title(self, docname):
-        """Parse a document title as the first line starting in [A-Za-z0-9<]
+      """Parse a document title as the first line starting in [A-Za-z0-9<]
            or fall back to the document basename if no such line exists.
            The cmake --help-*-list commands also depend on this convention.
            Return the title or False if the document file does not exist.
         """
-        env = self.document.settings.env
-        title = self.titles.get(docname)
-        if title is None:
-            fname = os.path.join(env.srcdir, docname+'.rst')
-            try:
-                f = open(fname, 'r')
-            except IOError:
-                title = False
-            else:
-                for line in f:
-                    if len(line) > 0 and (line[0].isalnum() or line[0] == '<'):
-                        title = line.rstrip()
-                        break
-                f.close()
-                if title is None:
-                    title = os.path.basename(docname)
-            self.titles[docname] = title
-        return title
+      env = self.document.settings.env
+      title = self.titles.get(docname)
+      if title is None:
+        fname = os.path.join(env.srcdir, f'{docname}.rst')
+        try:
+            f = open(fname, 'r')
+        except IOError:
+            title = False
+        else:
+            for line in f:
+                if len(line) > 0 and (line[0].isalnum() or line[0] == '<'):
+                    title = line.rstrip()
+                    break
+            f.close()
+            if title is None:
+                title = os.path.basename(docname)
+        self.titles[docname] = title
+      return title
 
     def apply(self):
-        env = self.document.settings.env
+      env = self.document.settings.env
 
-        # Treat some documents as cmake domain objects.
-        objtype, sep, tail = env.docname.rpartition('/')
-        make_index_entry = _cmake_index_objs.get(objtype)
-        if make_index_entry:
-            title = self.parse_title(env.docname)
-            # Insert the object link target.
-            targetname = title
-            targetid = '%s:%s' % (objtype, targetname)
-            targetnode = nodes.target('', '', ids=[targetid])
-            self.document.note_explicit_target(targetnode)
-            self.document.insert(0, targetnode)
-            # Insert the object index entry.
-            indexnode = addnodes.index()
-            indexnode['entries'] = [make_index_entry(title, targetid)]
-            self.document.insert(0, indexnode)
-            # Add to cmake domain object inventory
-            _cmake_object_inventory(env, self.document, 1, objtype, targetid)
+      # Treat some documents as cmake domain objects.
+      objtype, sep, tail = env.docname.rpartition('/')
+      if make_index_entry := _cmake_index_objs.get(objtype):
+        title = self.parse_title(env.docname)
+        # Insert the object link target.
+        targetname = title
+        targetid = f'{objtype}:{targetname}'
+        targetnode = nodes.target('', '', ids=[targetid])
+        self.document.note_explicit_target(targetnode)
+        self.document.insert(0, targetnode)
+        # Insert the object index entry.
+        indexnode = addnodes.index()
+        indexnode['entries'] = [make_index_entry(title, targetid)]
+        self.document.insert(0, indexnode)
+        # Add to cmake domain object inventory
+        _cmake_object_inventory(env, self.document, 1, objtype, targetid)
 
 class CMakeObject(ObjectDescription):
 
@@ -213,19 +208,18 @@ class CMakeObject(ObjectDescription):
         return sig
 
     def add_target_and_index(self, name, sig, signode):
-        targetname = name
-        targetid = '%s:%s' % (self.objtype, targetname)
-        if targetid not in self.state.document.ids:
-            signode['names'].append(targetid)
-            signode['ids'].append(targetid)
-            signode['first'] = (not self.names)
-            self.state.document.note_explicit_target(signode)
-            _cmake_object_inventory(self.env, self.state.document,
-                                    self.lineno, self.objtype, targetid)
+      targetname = name
+      targetid = f'{self.objtype}:{targetname}'
+      if targetid not in self.state.document.ids:
+          signode['names'].append(targetid)
+          signode['ids'].append(targetid)
+          signode['first'] = (not self.names)
+          self.state.document.note_explicit_target(signode)
+          _cmake_object_inventory(self.env, self.state.document,
+                                  self.lineno, self.objtype, targetid)
 
-        make_index_entry = _cmake_index_objs.get(self.objtype)
-        if make_index_entry:
-            self.indexnode['entries'].append(make_index_entry(name, targetid))
+      if make_index_entry := _cmake_index_objs.get(self.objtype):
+        self.indexnode['entries'].append(make_index_entry(name, targetid))
 
 class CMakeXRefRole(XRefRole):
 
@@ -238,19 +232,18 @@ class CMakeXRefRole(XRefRole):
         #  `command_name(SUB_COMMAND)`
         # to have an explicit target:
         #  `command_name(SUB_COMMAND) <command_name>`
-        if typ == 'cmake:command':
-            m = CMakeXRefRole._re_sub.match(text)
-            if m:
-                text = '%s <%s>' % (text, m.group(1))
-        # CMake cross-reference targets frequently contain '<' so escape
-        # any explicit `<target>` with '<' not preceded by whitespace.
-        while True:
-            m = CMakeXRefRole._re.match(text)
-            if m and len(m.group(2)) == 0:
-                text = '%s\x00<%s>' % (m.group(1), m.group(3))
-            else:
-                break
-        return XRefRole.__call__(self, typ, rawtext, text, *args, **keys)
+      if typ == 'cmake:command':
+        if m := CMakeXRefRole._re_sub.match(text):
+          text = f'{text} <{m.group(1)}>'
+      # CMake cross-reference targets frequently contain '<' so escape
+      # any explicit `<target>` with '<' not preceded by whitespace.
+      while True:
+          m = CMakeXRefRole._re.match(text)
+          if m and len(m.group(2)) == 0:
+              text = '%s\x00<%s>' % (m.group(1), m.group(3))
+          else:
+              break
+      return XRefRole.__call__(self, typ, rawtext, text, *args, **keys)
 
     # We cannot insert index nodes using the result_nodes method
     # because CMakeXRefRole is processed before substitution_reference
@@ -271,29 +264,29 @@ class CMakeXRefTransform(Transform):
     default_priority = 221
 
     def apply(self):
-        env = self.document.settings.env
+      env = self.document.settings.env
 
         # Find CMake cross-reference nodes and add index and target
         # nodes for them.
-        for ref in self.document.traverse(addnodes.pending_xref):
-            if not ref['refdomain'] == 'cmake':
-                continue
+      for ref in self.document.traverse(addnodes.pending_xref):
+        if ref['refdomain'] != 'cmake':
+          continue
 
-            objtype = ref['reftype']
-            make_index_entry = _cmake_index_objs.get(objtype)
-            if not make_index_entry:
-                continue
+        objtype = ref['reftype']
+        make_index_entry = _cmake_index_objs.get(objtype)
+        if not make_index_entry:
+            continue
 
-            objname = ref['reftarget']
-            targetnum = env.new_serialno('index-%s:%s' % (objtype, objname))
+        objname = ref['reftarget']
+        targetnum = env.new_serialno(f'index-{objtype}:{objname}')
 
-            targetid = 'index-%s-%s:%s' % (targetnum, objtype, objname)
-            targetnode = nodes.target('', '', ids=[targetid])
-            self.document.note_explicit_target(targetnode)
+        targetid = f'index-{targetnum}-{objtype}:{objname}'
+        targetnode = nodes.target('', '', ids=[targetid])
+        self.document.note_explicit_target(targetnode)
 
-            indexnode = addnodes.index()
-            indexnode['entries'] = [make_index_entry(objname, targetid, '')]
-            ref.replace_self([indexnode, targetnode, ref])
+        indexnode = addnodes.index()
+        indexnode['entries'] = [make_index_entry(objname, targetid, '')]
+        ref.replace_self([indexnode, targetnode, ref])
 
 class CMakeDomain(Domain):
     """CMake domain."""
@@ -350,22 +343,22 @@ class CMakeDomain(Domain):
     }
 
     def clear_doc(self, docname):
-        to_clear = set()
-        for fullname, (fn, _) in self.data['objects'].items():
-            if fn == docname:
-                to_clear.add(fullname)
-        for fullname in to_clear:
-            del self.data['objects'][fullname]
+      to_clear = {
+          fullname
+          for fullname, (fn, _) in self.data['objects'].items() if fn == docname
+      }
+      for fullname in to_clear:
+          del self.data['objects'][fullname]
 
     def resolve_xref(self, env, fromdocname, builder,
                      typ, target, node, contnode):
-        targetid = '%s:%s' % (typ, target)
-        obj = self.data['objects'].get(targetid)
-        if obj is None:
-            # TODO: warn somehow?
-            return None
-        return make_refnode(builder, fromdocname, obj[0], targetid,
-                            contnode, target)
+      targetid = f'{typ}:{target}'
+      obj = self.data['objects'].get(targetid)
+      if obj is None:
+          # TODO: warn somehow?
+          return None
+      return make_refnode(builder, fromdocname, obj[0], targetid,
+                          contnode, target)
 
     def get_objects(self):
         for refname, (docname, type) in self.data['objects'].items():

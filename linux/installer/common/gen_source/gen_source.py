@@ -56,7 +56,7 @@ def parse_cmd(argc, argv):
 	try:
 		opts, args = getopt.getopt(sys.argv[1:], "", ["bom=", "cleanup=", "deliverydir=", "installdir="])
 	except getopt.GetoptError as err:
-		print(str(err))
+		print(err)
 		return False
 
 	for option, value in opts:
@@ -67,7 +67,7 @@ def parse_cmd(argc, argv):
 
 		if option == "--cleanup":
 			cleanup = value
-			if cleanup.lower() != "true" and cleanup.lower() != "false":
+			if cleanup.lower() not in ["true", "false"]:
 				return False
 			if cleanup.lower() == "false":
 				cleanup = False
@@ -75,14 +75,11 @@ def parse_cmd(argc, argv):
 		if option == "--deliverydir":
 			deliverydir = value
 
-		if option == "--installdir":
+		elif option == "--installdir":
 			installdir = value
 
 
-	if bom_file == "":
-		return False
-
-	return True
+	return bom_file != ""
 
 ################################################################################
 # Name:   copy_folder_unrecursively()                                          #
@@ -93,12 +90,12 @@ def copy_folder_unrecursively(src_dir, dest_dir):
 	if os.path.isdir(src_dir) == True :
 		print ("Warning: The src is a folder ......")
 		return False
-		
+
 	try:
 		shutil.copy(src_dir, dest_dir)
 		return True
 	except:
-		print ("Error !!!: can't find file: {}".format(src_dir))
+		print(f"Error !!!: can't find file: {src_dir}")
 		return False
 
 ################################################################################
@@ -132,11 +129,10 @@ def copy_folder_recursively(src_dir, dest_dir):
 ################################################################################
 def read_BOM(local_path):
 	#get the BOM file path that need to open
-	file_list = local_path + "/" + bom_file
-	f = open(file_list, 'r')
-	#read the content in BOM file
-	lines = f.readlines()
-	f.close()	
+	file_list = f"{local_path}/{bom_file}"
+	with open(file_list, 'r') as f:
+		#read the content in BOM file
+		lines = f.readlines()
 	return lines	
 
 ################################################################################
@@ -149,23 +145,23 @@ def copy_txt_files(local_path):
 
 	#read BOM file contents
 	lines = read_BOM(local_path)
-	
+
 	for line in lines[1:]:
 		if line == "\n":
 			continue
 		src = line.split('\t')[0]
 		dest = line.split('\t')[1]
 		src = src.replace("\\", "/")
-		dest = dest.replace("\\", "/")	
+		dest = dest.replace("\\", "/")
 		if deliverydir == "":
-			src = src.replace("<deliverydir>/", home_path + "/")
+			src = src.replace("<deliverydir>/", f"{home_path}/")
 		else:
-			src = src.replace("<deliverydir>/", deliverydir + "/")
+			src = src.replace("<deliverydir>/", f"{deliverydir}/")
 
 		if installdir == "":
-			dest = dest.replace("<installdir>/", local_path + "/output/")
+			dest = dest.replace("<installdir>/", f"{local_path}/output/")
 		else:
-			dest = dest.replace("<installdir>/", local_path + "/output/" + installdir + "/")
+			dest = dest.replace("<installdir>/", f"{local_path}/output/{installdir}/")
 
 		if os.path.exists(src) == True:
 			#check whether the src is a folder or file
@@ -176,7 +172,7 @@ def copy_txt_files(local_path):
 				ret = copy_folder_unrecursively(src, dest)
 				if ret == False:
 					exit(1)
-				
+
 			else:
 				#the src is a folder
 				copy_folder_recursively(src, dest)
@@ -184,10 +180,10 @@ def copy_txt_files(local_path):
 			#although the src file isn't exist, create the dest folder
 			if os.path.exists(os.path.dirname(dest)) == False:
 				os.makedirs(os.path.dirname(dest))
-			if os.path.isdir(src) == False :
-				print ("Error !!!: src file not exist {}".format(src))
+			if os.path.isdir(src) == False:
+				print(f"Error !!!: src file not exist {src}")
 			else:
-				print ("Error !!!: src folder not exist {}".format(src))
+				print(f"Error !!!: src folder not exist {src}")
 			exit(1)
 
 
@@ -203,18 +199,18 @@ if __name__ == "__main__":
 	local_dir = os.path.basename(local_path)
 	local_path = local_path.replace("\\", "/")
 
-	ret = os.path.exists(local_path + "/output")
+	ret = os.path.exists(f"{local_path}/output")
 	if ret == True:
 		if cleanup == True:
 			print ("clean the dest dir")
-			shutil.rmtree(local_path + "/output")
-			os.mkdir(local_path + "/output")
+			shutil.rmtree(f"{local_path}/output")
+			os.mkdir(f"{local_path}/output")
 	else:
 		print ("Create the dest dir")
-		os.mkdir(local_path + "/output")
+		os.mkdir(f"{local_path}/output")
 
 	#cpoy the files
 	copy_txt_files(local_path)
-	
+
 	print ("Copy files finished ......")
 	exit(0)

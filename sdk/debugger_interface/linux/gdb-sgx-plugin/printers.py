@@ -20,12 +20,10 @@ import struct
 def get_inferior():
     """Get current inferior"""
     try:
-        if len(gdb.inferiors()) == 0:
-            print ("No gdb inferior could be found.")
-            return -1
-        else:
-            inferior = gdb.inferiors()[0]
-            return inferior
+        if len(gdb.inferiors()) != 0:
+            return gdb.inferiors()[0]
+        print ("No gdb inferior could be found.")
+        return -1
     except AttributeError:
         print ("This gdb's python support is too old, please update first.")
         exit()
@@ -39,8 +37,7 @@ def read_from_memory(addr, size):
         print ("Error happens in read_from_memory: addr = {0:x}".format(int(addr)))
         return None
     try:
-        string = inferior.read_memory(addr, size)
-        return string
+        return inferior.read_memory(addr, size)
     except gdb.MemoryError:
         print ("Can't access memory at {0:x}.".format(int(addr)))
         return None
@@ -90,7 +87,7 @@ def _remove_generics(typename):
     """
 
     match = re.match("^([^<]+)", typename)
-    return match.group(1)
+    return match[1]
 
 
 # Some common substitutions on the types to reduce visual clutter (A user who
@@ -144,8 +141,7 @@ def _typename_with_n_generic_arguments(gdb_type, n):
     for i in range(n):
         arg_list.append(_typename_for_nth_generic_argument(gdb_type, i))
         template += "%s, "
-    result = (template[:-2] + ">") % tuple(arg_list)
-    return result
+    return f"{template[:-2]}>" % tuple(arg_list)
 
 
 def _typename_with_first_generic_argument(gdb_type):
@@ -183,13 +179,11 @@ class StdTuplePrinter(object):
     def to_string(self):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if not self.val.type.fields():
-            return "empty %s" % typename
-        return "%s containing" % typename
+            return f"empty {typename}"
+        return f"{typename} containing"
 
     def children(self):
-        if not self.val.type.fields():
-            return iter(())
-        return self._Children(self.val)
+        return iter(()) if not self.val.type.fields() else self._Children(self.val)
 
 
 def _get_base_subobject(child_class_value, index=0):
@@ -231,15 +225,15 @@ class StdStringPrinter(object):
 
         # This logical structure closely follows the original code (which is clearer
         # in C++).  Keep them parallel to make them easier to compare.
-        if libcpp_abi_alternate_string_layout:
-            if _libcpp_big_endian:
-                return short_size >> 1
-            else:
-                return short_size
-        elif _libcpp_big_endian:
-            return short_size
-        else:
+        if (
+            libcpp_abi_alternate_string_layout
+            and _libcpp_big_endian
+            or not libcpp_abi_alternate_string_layout
+            and not _libcpp_big_endian
+        ):
             return short_size >> 1
+        else:
+            return short_size
 
     def __init__(self, val):
         self.val = val
@@ -283,10 +277,8 @@ class StdUniquePtrPrinter(object):
     def to_string(self):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if not self.addr:
-            return "%s is nullptr" % typename
-        return ("%s<%s> containing" %
-                (typename,
-                 _remove_generics(_prettify_typename(self.pointee_type))))
+            return f"{typename} is nullptr"
+        return f"{typename}<{_remove_generics(_prettify_typename(self.pointee_type))}> containing"
 
     def __iter__(self):
         if self.addr:
@@ -309,7 +301,7 @@ class StdSharedPointerPrinter(object):
         pointee_type = _remove_generics(
             _prettify_typename(self.val.type.template_argument(0)))
         if not self.addr:
-            return "%s is nullptr" % typename
+            return f"{typename} is nullptr"
         refcount = self.val["__cntrl_"]
         if refcount != 0:
             cntrl_addr = refcount.cast(_long_int_type)
@@ -321,7 +313,7 @@ class StdSharedPointerPrinter(object):
                 state = "expired, weak %d" % weakcount
             else:
                 state = "count %d, weak %d" % (usecount, weakcount)
-        return "%s<%s> %s containing" % (typename, pointee_type, state)
+        return f"{typename}<{pointee_type}> {state} containing"
 
     def __iter__(self):
         if self.addr:
@@ -354,10 +346,7 @@ class StdVectorPrinter(object):
             if self.count > self.size:
                 raise StopIteration
             entry = self.item.dereference()
-            if entry & (1 << self.offset):
-                outbit = 1
-            else:
-                outbit = 0
+            outbit = 1 if entry & (1 << self.offset) else 0
             self.offset += 1
             if self.offset >= self.bits_per_word:
                 self.item += 1
@@ -437,7 +426,7 @@ class StdBitsetPrinter(object):
 
     def to_string(self):
         typename = _prettify_typename(self.val.type)
-        return "%s" % typename
+        return f"{typename}"
 
     def _byte_it(self, value):
         index = -1
@@ -450,8 +439,7 @@ class StdBitsetPrinter(object):
 
     def _list_it(self):
         for word_index in range(self.n_words):
-            current = self.values[word_index]
-            if current:
+            if current := self.values[word_index]:
                 for n in self._byte_it(current):
                     yield ("[%d]" % (word_index * self.bits_per_word + n), 1)
 
@@ -503,7 +491,7 @@ class StdDequePrinter(object):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if self.size:
             return "%s with %d elements" % (typename, self.size)
-        return "%s is empty" % typename
+        return f"{typename} is empty"
 
     def __iter__(self):
         return self._list_it()
@@ -532,7 +520,7 @@ class StdListPrinter(object):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if self.size:
             return "%s with %d elements" % (typename, self.size)
-        return "%s is empty" % typename
+        return f"{typename} is empty"
 
     def _list_iter(self):
         current_node = self.first_node
@@ -559,7 +547,7 @@ class StdQueueOrStackPrinter(object):
 
     def to_string(self):
         typename = _remove_generics(_prettify_typename(self.val.type))
-        return "%s wrapping" % typename
+        return f"{typename} wrapping"
 
     def children(self):
         return iter([("", self.underlying)])
@@ -581,7 +569,7 @@ class StdPriorityQueuePrinter(object):
         # container, which is a generic class. libstdcxx pretty printers do not
         # print the top element.
         typename = _remove_generics(_prettify_typename(self.val.type))
-        return "%s wrapping" % typename
+        return f"{typename} wrapping"
 
     def children(self):
         return iter([("", self.underlying)])
@@ -598,12 +586,10 @@ class RBTreeUtils(object):
         self.root = root
 
     def left_child(self, node):
-        result = node.cast(self.cast_type).dereference()["__left_"]
-        return result
+        return node.cast(self.cast_type).dereference()["__left_"]
 
     def right_child(self, node):
-        result = node.cast(self.cast_type).dereference()["__right_"]
-        return result
+        return node.cast(self.cast_type).dereference()["__right_"]
 
     def parent(self, node):
         """Return the parent of node, if it exists."""
@@ -632,9 +618,7 @@ class RBTreeUtils(object):
         # pointer.  0x8000 is fairly arbitrary, but has had good results in
         # practice.  If there was a way to tell if a pointer is invalid without
         # actually dereferencing it and spewing error messages, that would be ideal.
-        if parent < 0x8000:
-            return None
-        return parent
+        return None if parent < 0x8000 else parent
 
     def is_left_child(self, node):
         parent = self.parent(node)
@@ -672,8 +656,7 @@ class AbstractRBTreePrinter(object):
             skip_left_child = False
             for key_value in self._get_key_value(current):
                 yield "", key_value
-            right_child = self.util.right_child(current)
-            if right_child:
+            if right_child := self.util.right_child(current):
                 current = right_child
                 continue
             while self.util.is_right_child(current):
@@ -694,18 +677,16 @@ class AbstractRBTreePrinter(object):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if self.size:
             return "%s with %d elements" % (typename, self.size)
-        return "%s is empty" % typename
+        return f"{typename} is empty"
 
 
 class StdMapPrinter(AbstractRBTreePrinter):
     """Print a std::map or std::multimap."""
 
     def _init_cast_type(self, val_type):
-        map_it_type = gdb.lookup_type(
-            str(val_type) + "::iterator").strip_typedefs()
+        map_it_type = gdb.lookup_type(f"{str(val_type)}::iterator").strip_typedefs()
         tree_it_type = map_it_type.template_argument(0)
-        node_ptr_type = tree_it_type.template_argument(1)
-        return node_ptr_type
+        return tree_it_type.template_argument(1)
 
     def display_hint(self):
         return "map"
@@ -720,10 +701,8 @@ class StdSetPrinter(AbstractRBTreePrinter):
     """Print a std::set."""
 
     def _init_cast_type(self, val_type):
-        set_it_type = gdb.lookup_type(
-            str(val_type) + "::iterator").strip_typedefs()
-        node_ptr_type = set_it_type.template_argument(1)
-        return node_ptr_type
+        set_it_type = gdb.lookup_type(f"{str(val_type)}::iterator").strip_typedefs()
+        return set_it_type.template_argument(1)
 
     def display_hint(self):
         return "array"
@@ -752,15 +731,13 @@ class AbstractRBTreeIteratorPrinter(object):
             self.util.is_right_child(self.addr)
 
     def to_string(self):
-        if not self.addr:
-            return "%s is nullptr" % self.typename
-        return "%s " % self.typename
+        return f"{self.typename} is nullptr" if not self.addr else f"{self.typename} "
 
     def _get_node_value(self, node):
         raise NotImplementedError
 
     def __iter__(self):
-        addr_str = "[%s]" % str(self.addr)
+        addr_str = f"[{str(self.addr)}]"
         if not self._is_valid_node():
             yield addr_str, " end()"
         else:
@@ -830,7 +807,7 @@ class AbstractUnorderedCollectionPrinter(object):
         typename = _remove_generics(_prettify_typename(self.val.type))
         if self.size:
             return "%s with %d elements" % (typename, self.size)
-        return "%s is empty" % typename
+        return f"{typename} is empty"
 
     def _get_key_value(self, node):
         """Subclasses should override to return a list of values to yield."""
@@ -879,9 +856,7 @@ class AbstractHashMapIteratorPrinter(object):
         raise NotImplementedError
 
     def to_string(self):
-        if not self.addr:
-            return "%s = end()" % self.typename
-        return "%s " % self.typename
+        return f"{self.typename} = end()" if not self.addr else f"{self.typename} "
 
     def children(self):
         return self if self.addr else iter(())
@@ -922,7 +897,7 @@ class StdUnorderedMapIteratorPrinter(AbstractHashMapIteratorPrinter):
 
 def _remove_std_prefix(typename):
     match = re.match("^std::(.+)", typename)
-    return match.group(1) if match is not None else ""
+    return match[1] if match is not None else ""
 
 
 class LibcxxPrettyPrinter(object):
@@ -985,10 +960,7 @@ class LibcxxPrettyPrinter(object):
         # Don't attempt types known to be inside libstdcxx.
         typename = val.type.name or val.type.tag or str(val.type)
         match = re.match("^std::(__.*?)::", typename)
-        if match is None or match.group(1) in ["__cxx1998",
-                                               "__debug",
-                                               "__7",
-                                               "__g"]:
+        if match is None or match[1] in ["__cxx1998", "__debug", "__7", "__g"]:
             return None
 
         # Handle any using declarations or other typedefs.
@@ -997,9 +969,7 @@ class LibcxxPrettyPrinter(object):
             return None
         without_generics = _remove_generics(typename)
         lookup_name = _remove_std_prefix(without_generics)
-        if lookup_name in self.lookup:
-            return self.lookup[lookup_name](val)
-        return None
+        return self.lookup[lookup_name](val) if lookup_name in self.lookup else None
 
 
 _libcxx_printer_name = "libcxx_pretty_printer"

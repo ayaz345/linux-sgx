@@ -41,12 +41,12 @@ def generate_doxygen_xml(app):
         # Write the file out again
         file = tempfile.NamedTemporaryFile(mode='w', delete=False)
         file.write(filedata)
-  
-        retcode = subprocess.call("doxygen %s" % file.name, shell=True)
+
+        retcode = subprocess.call(f"doxygen {file.name}", shell=True)
         if retcode < 0:
-            sys.stderr.write("doxygen terminated by signal %s" % (-retcode))
+            sys.stderr.write(f"doxygen terminated by signal {-retcode}")
     except OSError as e:
-        sys.stderr.write("doxygen execution failed: %s" % e)
+        sys.stderr.write(f"doxygen execution failed: {e}")
 
 
 def setup(app):

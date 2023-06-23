@@ -8,10 +8,7 @@ import glob, os, re, sys, getopt
 
 #----------- Remove prefix from a string -----------
 def remove_prefix(line, prefix):
-    if line.startswith(prefix):
-        return line[len(prefix):]
-    else:
-        return line
+    return line[len(prefix):] if line.startswith(prefix) else line
 
 #----------- Convert case-insensitive path to case-sensitive path -----------
 def casedpath_unc(path):

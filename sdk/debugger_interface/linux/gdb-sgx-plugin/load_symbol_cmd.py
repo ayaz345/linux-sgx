@@ -40,7 +40,7 @@ import traceback, errno, string, re, sys, time, readelf;
 
 def GetLoadSymbolCommand(EnclaveFile, Base):
     text = readelf.ReadElf(EnclaveFile)
-    if text == None:
+    if text is None:
         return -1
     SegsFile = StringIO(text)
 
@@ -48,7 +48,7 @@ def GetLoadSymbolCommand(EnclaveFile, Base):
         FileList = SegsFile.readlines()
         n=4;
         m=100;
-        Out = [[[] for ni in range(n)] for mi in range(m)]
+        Out = [[[] for _ in range(n)] for _ in range(m)]
         i=0;
         Out[99][2] = '0';
         # Parse the readelf output file to extract the section names and
@@ -81,19 +81,27 @@ def GetLoadSymbolCommand(EnclaveFile, Base):
                             Out[i][2] = str(int(list[SegOffset+3], 16) + int(Base, 10));
                             Out[i][3] = " ";
                             i = i+1;
-        if('0' != Out[99][2]):
-            # The last section must not have the '\' line continuation character.
-            Out[i-1][3] = '';
+        if Out[99][2] == '0':
+            return -1
+
+        # The last section must not have the '\' line continuation character.
+        Out[i-1][3] = '';
 
             # Write the GDB 'add-symbol-file' command with all the arguments to the setup GDB command file.
             # Note: The mandatory argument for the 'add-symbol-file' command is the .text section without a
             # '-s .SectionName'.  All other sections need the '-s .SectionName'.
-            gdbcmd = "add-symbol-file '" + EnclaveFile + "' " + '%(Location)#08x' % {'Location':int(Out[99][2])} + " "
-            for j in range(i):
-                gdbcmd += Out[j][0] + " " + Out[j][1] + " " + '%(Location)#08x' % {'Location' : int(Out[j][2])} + " " + Out[j][3]
-        else:
-            return -1
-
+        gdbcmd = (
+            f"add-symbol-file '{EnclaveFile}' "
+            + '%(Location)#08x' % {'Location': int(Out[99][2])}
+            + " "
+        )
+        for j in range(i):
+            gdbcmd += (
+                f"{Out[j][0]} {Out[j][1]} "
+                + '%(Location)#08x' % {'Location': int(Out[j][2])}
+                + " "
+                + Out[j][3]
+            )
         return gdbcmd
 
     except:
@@ -102,7 +110,7 @@ def GetLoadSymbolCommand(EnclaveFile, Base):
 
 def GetUnloadSymbolCommand(EnclaveFile, Base):
     text = readelf.ReadElf(EnclaveFile)
-    if text == None:
+    if text is None:
         return -1
     SegsFile = StringIO(text)
 
@@ -112,7 +120,7 @@ def GetUnloadSymbolCommand(EnclaveFile, Base):
         # their offsets and add the Proj base address.
         for line in FileList:
             list = line.split();
-            if(len(list) > 0):
+            if (len(list) > 0):
                 SegOffset = -1;
                 # The readelf will put a space after the open bracket for single
                 # digit section numbers.  This causes the line.split to create
@@ -122,11 +130,11 @@ def GetUnloadSymbolCommand(EnclaveFile, Base):
                 if(re.match('\s*[0-9]+\]',list[1])):
                     SegOffset = 1;
 
-                if(SegOffset != -1):
+                if (SegOffset != -1):
                     if (list[SegOffset+1][0] == '.'):
                         # If it is the .text section, get the .text start address and plus enclave start address
-                        if(list[SegOffset+1].find(".text") != -1):
-                            return "remove-symbol-file -a " + str(int(list[SegOffset+3], 16) + int(Base, 10))
+                        if (list[SegOffset+1].find(".text") != -1):
+                            return f"remove-symbol-file -a {str(int(list[SegOffset + 3], 16) + int(Base, 10))}"
 
     except:
         print ("Error parsing enclave file.  Check format of file.")

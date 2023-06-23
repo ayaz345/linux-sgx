@@ -68,12 +68,10 @@ TCS_INFO_FMT = 'QQQIIQQQ'
 def get_inferior():
     """Get current inferior"""
     try:
-        if len(gdb.inferiors()) == 0:
-            print ("No gdb inferior could be found.")
-            return -1
-        else:
-            inferior = gdb.inferiors()[0]
-            return inferior
+        if len(gdb.inferiors()) != 0:
+            return gdb.inferiors()[0]
+        print ("No gdb inferior could be found.")
+        return -1
     except AttributeError:
         print ("This gdb's python support is too old, please update first.")
         exit()
@@ -87,8 +85,7 @@ def read_from_memory(addr, size):
         print ("Error happens in read_from_memory: addr = {0:x}".format(int(addr)))
         return None
     try:
-        string = inferior.read_memory(addr, size)
-        return string
+        return inferior.read_memory(addr, size)
     except gdb.MemoryError:
         print ("Can't access memory at {0:x}.".format(int(addr)))
         return None
@@ -112,11 +109,8 @@ def target_path_to_host_path(target_path):
     path = strpath.split()[-1]
     strlen = len(path)
     if strlen != 1:
-        path = path[0:strlen-1]
-    host_path = path + "/" + so_name
-    #strlen = len(host_path)
-    #host_path = host_path[0:strlen-7]
-    return host_path
+        path = path[:strlen-1]
+    return f"{path}/{so_name}"
 
 class enclave_info(object):
     """Class to contain the enclave information,
@@ -140,12 +134,7 @@ class enclave_info(object):
         return "start_addr = %#x, enclave_path = \"%s\", stack_size = %d" \
             % (self.start_addr, self.enclave_path, self.stack_size)
     def __eq__(self, other):
-        if other == None:
-            return False
-        if self.start_addr == other.start_addr:
-            return True
-        else:
-            return False
+        return False if other == None else self.start_addr == other.start_addr
     def init_enclave_debug(self):
         # Only product HW enclave can't be debugged
         if (self.enclave_type & ET_SIM) != ET_SIM and (self.enclave_type & ET_DEBUG) != ET_DEBUG:
@@ -154,7 +143,7 @@ class enclave_info(object):
         # set TCS debug flag
         for tcs_addr in self.tcs_addr_list:
             string = read_from_memory(tcs_addr + 8, 4)
-            if string == None:
+            if string is None:
                 return 0
             flag = struct.unpack('I', string)[0]
             flag |= 1
@@ -181,28 +170,26 @@ class enclave_info(object):
             return -2
         # read the peak_heap_used value
         string = read_from_memory(self.heap_addr, SIZE)
-        if string == None:
+        if string is None:
             return -1
         if SIZE == 4:
             fmt = 'I'
         elif SIZE == 8:
             fmt = "Q"
-        peak_heap_used = struct.unpack(fmt, string)[0]
-        return peak_heap_used
+        return struct.unpack(fmt, string)[0]
 
     def get_peak_rsrv_mem_committed(self):
         """Get the peak value of the reserved memory committed"""
         if self.rsrv_mem_addr == 0:
             return -2
         string = read_from_memory(self.rsrv_mem_addr, SIZE)
-        if string == None:
+        if string is None:
             return -1
         if SIZE == 4:
             fmt = 'I'
         elif SIZE == 8:
             fmt = 'Q'
-        peak_rsrv_mem_committed = struct.unpack(fmt, string)[0]
-        return peak_rsrv_mem_committed
+        return struct.unpack(fmt, string)[0]
 
     def internal_compare (self, a, b):
         return (a > b) - (a < b)
@@ -220,7 +207,7 @@ class enclave_info(object):
             #print "low = %x, high = %x, mid = %x" % (low, high, mid)
             mid = (low + high)>>1
             string = read_from_memory(stack_addr + mid*PAGE_SIZE + (PAGE_SIZE>>1), PAGE_SIZE>>1)
-            if string == None:
+            if string is None:
                 return -2
             dirty_flag = 0
             for i in range(0, PAGE_SIZE>>4):
@@ -240,7 +227,7 @@ class enclave_info(object):
         peak_stack_used = 0
         for tcs_addr in self.tcs_addr_list:
             tcs_str = read_from_memory(tcs_addr, ENCLAVE_TCS_INFO_SIZE)
-            if tcs_str == None:
+            if tcs_str is None:
                 return -1
             tcs_tuple = struct.unpack_from(TCS_INFO_FMT, tcs_str)
             offset = tcs_tuple[7]
@@ -255,7 +242,7 @@ class enclave_info(object):
                 td_addr = self.elrange_start_address + offset
 
             td_str = read_from_memory(td_addr, (20*SIZE))
-            if td_str == None:
+            if td_str is None:
                 return -1
             td_tuple = struct.unpack_from(td_fmt, td_str)
 
@@ -275,7 +262,7 @@ class enclave_info(object):
                     return -1
                 else:
                     string = read_from_memory(stack_limit_addr + (page_index+1) * PAGE_SIZE, PAGE_SIZE)
-                    if string == None:
+                    if string is None:
                         return -1
                     for i in range(0, len(string)):
                         temp = struct.unpack_from("B", string, i)[0]
@@ -283,9 +270,7 @@ class enclave_info(object):
                             stack_usage = self.stack_size - (page_index+1) * PAGE_SIZE - i
                             break
 
-            if peak_stack_used < stack_usage:
-                peak_stack_used = stack_usage
-
+            peak_stack_used = max(peak_stack_used, stack_usage)
         return peak_stack_used
 
     def show_emmt(self):
@@ -324,7 +309,7 @@ class enclave_info(object):
             # clear TCS debug flag
             for tcs_addr in self.tcs_addr_list:
                 string = read_from_memory(tcs_addr + 8, 4)
-                if string == None:
+                if string is None:
                     return -2
                 flag = struct.unpack('I', string)[0]
                 flag &= (~1)
@@ -346,7 +331,6 @@ class enclave_info(object):
             except gdb.error:
                 print ("Old gdb doesn't support remove-file-symbol command")
             return 0
-        ##It is possible enclave has been destroyed, so may raise exception on memory access
         except gdb.MemoryError:
             return -1
         except:
